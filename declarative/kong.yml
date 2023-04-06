@@ -1,0 +1,91 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+- name: frontier
+  host: host.docker.internal
+  # path: /v1beta1
+  port: 7400
+  protocol: http
+  routes:
+  - name: list-auth
+    paths:
+    - /v1beta1/auth
+    strip_path: false
+  - name: register
+    paths:
+    - ~/v1beta1/auth/register/(?<provider>\w+)
+    strip_path: false
+  - name: register-callback
+    paths:
+    - /v1beta1/auth/callback
+    strip_path: false
+  - name: logout
+    paths:
+    - /v1beta1/auth/logout
+    strip_path: false
+  - name: profile
+    paths:
+    - /v1beta1/users/self
+    strip_path: false
+  - name: jwks
+    paths:
+    - /.well-known/jwks.json
+    strip_path: false
+- name: backend-app
+  host: host.docker.internal
+  port: 8888
+  protocol: http
+  routes:
+    - name: test
+      paths:
+        - /test
+      strip_path: false
+- name: frontier-manage
+  host: host.docker.internal
+  port: 7400
+  protocol: http
+  routes:
+    - name: org-manage
+      paths: ["~/v1beta1/organizations/(?<org>[0-9a-zA-Z-]+)"]
+      strip_path: false
+      plugins:
+        - name: frontier-auth
+          config:
+            authn_url: http://host.docker.internal:7400/v1beta1/users/self
+            authz_url: http://host.docker.internal:7400/v1beta1/check
+            rule:
+              namespace: "frontier/organization"
+              id: org
+              methods:
+              - "GET#view"
+              - "POST#create"
+
+plugins:
+- name: frontier-auth
+  service: backend-app
+  config: 
+    authn_url: http://host.docker.internal:7400/v1beta1/users/self
+
+# we can override the request url using following plugin to avoid exposing 
+# complicated backend paths
+# for e.g.: route of `list-auth` will just have `auth` as path which will be
+# replaced with `/v1beta1/auth` for frontier
+# - name: route-override
+#   route: list-auth
+#   config: 
+#     authn_url: /v1beta1/auth
+
+# regex capturing groups can be used for dynamic routes
+# for e.g. ~/register/(?<provider>\w+)
+# - name: route-override
+#   route: register
+#   config: 
+#     authn_url: /v1beta1/auth/register/<provider>
+
+# or via existing plugin https://docs.konghq.com/hub/kong-inc/request-transformer/
+# - name: request-transformer
+#   route: register
+#   config: 
+#     replace:
+#       uri: /v1beta1/auth/register/$(uri_captures["provider"])
